@@ -1,4 +1,5 @@
 # PianoGuard API
+- Last update 21 Jul 2025 08:12
 
 This is the backend API server for the PianoGuard project. It uses **FastAPI** for web routing and **Gunicorn** with **Uvicorn workers** for production deployment. The project is managed in a Python 3.11 virtual environment.
 
