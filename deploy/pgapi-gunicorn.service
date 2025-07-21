@@ -1,0 +1,15 @@
+[Unit]
+Description=Gunicorn for PianoGuard API
+After=network.target
+
+[Service]
+User=andrew
+Group=andrew
+WorkingDirectory=/home/andrew/pgapi
+Environment="PATH=/home/andrew/pgapi/venv/bin"
+ExecStart=/bin/bash /home/andrew/pgapi/start_gunicorn.sh
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
