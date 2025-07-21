@@ -20,7 +20,7 @@ This is the backend API server for the PianoGuard project. It uses **FastAPI** f
 ### Setup
 
 ```bash
-git clone https://github.com/Andwardo/pgapi.git
+git clone git@github.com:BlueSkyFusion/pgapi.git
 cd pgapi
 python3.11 -m venv venv
 source venv/bin/activate
@@ -38,6 +38,29 @@ The server will start on `http://127.0.0.1:8000/`.
 ## Production Deployment
 
 Gunicorn is used to run the API as a background service via systemd.
+
+### Reverse Proxy with NGINX
+
+NGINX is configured to proxy HTTPS requests to the Gunicorn server at `127.0.0.1:8000`.
+
+SSL certificates are provisioned via Certbot and auto-renewed.
+
+Example config:
+```nginx
+server {
+    listen 443 ssl;
+    server_name pgapi.net;
+
+    ssl_certificate /etc/letsencrypt/live/pgapi.net/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/pgapi.net/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
 
 ### Example systemd Service File
 
@@ -81,6 +104,17 @@ Expected response:
 ```json
 {"message":"PianoGuard API online"}
 ```
+
+---
+
+## ✅ Final Step
+
+Update `README.md`, then:
+
+```bash
+git add README.md
+git commit -m "Update README with new GitHub repo and NGINX reverse proxy section"
+git push origin main
 
 ## License
 
