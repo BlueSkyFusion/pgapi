@@ -4,23 +4,46 @@ main.py
 Created on: 2025-07-20
 Edited on: 2025-07-21
 Author: R. Andrew Ballard (c) 2025 "Andwardo"
-Version: v1.0.4
-Stubbed /register-device route with factory_key validation against env var
+Version: v2.0.0
+Integrated asyncpg with connection pooling and proper PostgreSQL queries
 """
 
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from data import router as data_router, init_db_pool, close_db_pool
 
 load_dotenv()
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for database connection pool"""
+    # Startup: Initialize database connection pool
+    await init_db_pool()
+    yield
+    # Shutdown: Close database connection pool
+    await close_db_pool()
+
+
+app = FastAPI(lifespan=lifespan)
+app.include_router(data_router)
 
 
 @app.get("/")
 async def root():
     return {"message": "PianoGuard API online"}
+
+
+@app.get("/api/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "service": "PianoGuard API",
+        "version": "v2.0.0"
+    }
 
 
 @app.get("/env-test")

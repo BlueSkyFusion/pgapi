@@ -26,4 +26,11 @@ def get_env_var(key: str, length: int = None) -> str:
     return value
 
 # Strict load of factory key
-PIANOGUARD_FACTORY_KEY = get_env_var("PIANOGUARD_FACTORY_KEY", 64)
+PIANOGUARD_FACTORY_KEY = get_env_var("PIANOGUARD_FACTORY_KEY", 48)
+
+# Database configuration
+DB_HOST = get_env_var("DB_HOST")
+DB_PORT = get_env_var("DB_PORT")
+DB_NAME = get_env_var("DB_NAME")
+DB_USER = get_env_var("DB_USER")
+DB_PASSWORD = get_env_var("DB_PASSWORD")
