@@ -49,7 +49,6 @@ class HistoryResponse(BaseModel):
 class DeviceInfo(BaseModel):
     device_id: str
     last_seen: Optional[int] = None
-    fw_version: Optional[str] = None
 
 
 async def init_db_pool():
@@ -89,7 +88,6 @@ async def create_tables():
             CREATE TABLE IF NOT EXISTS "Devices" (
                 device_id VARCHAR(255) PRIMARY KEY,
                 last_seen BIGINT,
-                fw_version VARCHAR(50),
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             )
@@ -249,7 +247,7 @@ async def get_devices():
 
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT device_id, last_seen, fw_version
+            SELECT device_id, last_seen
             FROM "Devices"
             ORDER BY last_seen DESC NULLS LAST
         """)
@@ -257,8 +255,7 @@ async def get_devices():
         return [
             DeviceInfo(
                 device_id=row["device_id"],
-                last_seen=row["last_seen"],
-                fw_version=row["fw_version"]
+                last_seen=row["last_seen"]
             )
             for row in rows
         ]
@@ -273,17 +270,15 @@ async def store_sensor_data(data: Dict[str, Any]) -> None:
     async with db_pool.acquire() as conn:
         # Upsert device info
         await conn.execute("""
-            INSERT INTO "Devices" (device_id, last_seen, fw_version)
-            VALUES ($1, $2, $3)
+            INSERT INTO "Devices" (device_id, last_seen)
+            VALUES ($1, $2)
             ON CONFLICT (device_id)
             DO UPDATE SET
                 last_seen = EXCLUDED.last_seen,
-                fw_version = EXCLUDED.fw_version,
                 updated_at = CURRENT_TIMESTAMP
         """,
             data.get("device_id"),
-            data.get("timestamp"),
-            data.get("fw_version")
+            data.get("timestamp")
         )
 
         # Insert telemetry data
