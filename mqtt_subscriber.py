@@ -21,6 +21,7 @@ from datetime import datetime
 
 import asyncpg
 import paho.mqtt.client as mqtt
+from paho.mqtt.client import CallbackAPIVersion
 from dotenv import load_dotenv
 
 from env import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
@@ -41,15 +42,17 @@ load_dotenv()
 
 # MQTT Configuration
 MQTT_BROKER = "localhost"
-MQTT_PORT = 8883
+MQTT_PORT = 1883  # Using non-TLS port for testing
 MQTT_TOPIC = "pianoguard/+/telemetry"
 MQTT_CA_CERT = "/etc/mosquitto/mosquitto.crt"
 MQTT_USERNAME = "dcm_client"
 MQTT_PASSWORD = "secure_mqtt_pass"
+USE_TLS = False  # Disable TLS for testing
 
-# Global database pool
+# Global database pool and event loop
 db_pool: Optional[asyncpg.Pool] = None
 mqtt_client: Optional[mqtt.Client] = None
+event_loop: Optional[asyncio.AbstractEventLoop] = None
 running = True
 
 
@@ -92,12 +95,12 @@ async def store_telemetry(data: Dict[str, Any]) -> None:
         async with db_pool.acquire() as conn:
             # Upsert device info with online status
             await conn.execute("""
-                INSERT INTO "Devices" (device_id, last_seen)
-                VALUES ($1, to_timestamp($2))
+                INSERT INTO "Devices" (device_id, last_seen, "createdAt", "updatedAt")
+                VALUES ($1, to_timestamp($2), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 ON CONFLICT (device_id)
                 DO UPDATE SET
                     last_seen = EXCLUDED.last_seen,
-                    updated_at = CURRENT_TIMESTAMP
+                    "updatedAt" = CURRENT_TIMESTAMP
             """,
                 data.get("device_id"),
                 data.get("timestamp")
@@ -108,9 +111,10 @@ async def store_telemetry(data: Dict[str, Any]) -> None:
                 INSERT INTO "TelemetryData" (
                     device_id, timestamp, fw_version, wifi_ssid, wifi_rssi,
                     uptime_ms, free_heap, battery_voltage,
-                    led_power, led_water, led_pads
+                    led_power, led_water, led_pads,
+                    "createdAt", "updatedAt"
                 )
-                VALUES ($1, to_timestamp($2), $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                VALUES ($1, to_timestamp($2), $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
                 data.get("device_id"),
                 data.get("timestamp"),
@@ -131,20 +135,20 @@ async def store_telemetry(data: Dict[str, Any]) -> None:
         logger.error(f"Failed to store telemetry: {e}")
 
 
-def on_connect(client, userdata, flags, rc):
-    """MQTT connection callback"""
-    if rc == 0:
+def on_connect(client, userdata, flags, reason_code, properties):
+    """MQTT connection callback (API v2)"""
+    if reason_code == 0:
         logger.info(f"Connected to MQTT broker at {MQTT_BROKER}:{MQTT_PORT}")
         client.subscribe(MQTT_TOPIC)
         logger.info(f"Subscribed to topic: {MQTT_TOPIC}")
     else:
-        logger.error(f"Failed to connect to MQTT broker, return code: {rc}")
+        logger.error(f"Failed to connect to MQTT broker, reason code: {reason_code}")
 
 
-def on_disconnect(client, userdata, rc):
-    """MQTT disconnection callback"""
-    if rc != 0:
-        logger.warning(f"Unexpected disconnection from MQTT broker, return code: {rc}")
+def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
+    """MQTT disconnection callback (API v2)"""
+    if reason_code != 0:
+        logger.warning(f"Unexpected disconnection from MQTT broker, reason code: {reason_code}")
     else:
         logger.info("Disconnected from MQTT broker")
 
@@ -162,8 +166,9 @@ def on_message(client, userdata, msg):
             logger.warning(f"Missing required fields in payload: {payload}")
             return
 
-        # Store telemetry asynchronously
-        asyncio.create_task(store_telemetry(payload))
+        # Store telemetry asynchronously from MQTT thread
+        if event_loop:
+            asyncio.run_coroutine_threadsafe(store_telemetry(payload), event_loop)
 
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse JSON payload: {e}")
@@ -173,31 +178,40 @@ def on_message(client, userdata, msg):
 
 def setup_mqtt_client() -> mqtt.Client:
     """Setup and configure MQTT client"""
-    client = mqtt.Client(client_id="pianoguard_subscriber", clean_session=True)
+    # Use CallbackAPIVersion.VERSION2 to fix deprecation warning
+    client = mqtt.Client(
+        callback_api_version=CallbackAPIVersion.VERSION2,
+        client_id="pianoguard_subscriber",
+        clean_session=True
+    )
 
     # Set callbacks
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
     client.on_message = on_message
 
-    # Configure TLS
-    try:
-        client.tls_set(
-            ca_certs=MQTT_CA_CERT,
-            certfile=None,
-            keyfile=None,
-            cert_reqs=ssl.CERT_REQUIRED,
-            tls_version=ssl.PROTOCOL_TLS,
-            ciphers=None
-        )
-        client.tls_insecure_set(False)
-        logger.info(f"TLS configured with CA cert: {MQTT_CA_CERT}")
-    except Exception as e:
-        logger.error(f"Failed to configure TLS: {e}")
-        raise
+    # Configure TLS if enabled
+    if USE_TLS:
+        try:
+            client.tls_set(
+                ca_certs=MQTT_CA_CERT,  # Use server cert as CA for self-signed
+                certfile=None,
+                keyfile=None,
+                cert_reqs=ssl.CERT_REQUIRED,
+                tls_version=ssl.PROTOCOL_TLSv1_2,
+                ciphers=None
+            )
+            client.tls_insecure_set(True)  # Skip hostname verification
+            logger.info(f"TLS configured with self-signed cert: {MQTT_CA_CERT}")
+        except Exception as e:
+            logger.error(f"Failed to configure TLS: {e}")
+            raise
+    else:
+        logger.info("TLS disabled - connecting without encryption")
 
-    # Set authentication
-    client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+    # Set authentication (optional since allow_anonymous=true in Mosquitto)
+    # Uncomment if you configure authentication in Mosquitto
+    # client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
     return client
 
@@ -211,7 +225,10 @@ def signal_handler(signum, frame):
 
 async def main():
     """Main event loop"""
-    global mqtt_client, running
+    global mqtt_client, running, event_loop
+
+    # Store event loop reference for MQTT callbacks
+    event_loop = asyncio.get_running_loop()
 
     # Setup signal handlers
     signal.signal(signal.SIGINT, signal_handler)

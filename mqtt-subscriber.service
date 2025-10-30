@@ -9,7 +9,7 @@ User=andrew
 Group=andrew
 WorkingDirectory=/home/andrew/pgapi
 Environment="PATH=/home/andrew/pgapi/venv/bin"
-ExecStart=/home/andrew/pgapi/venv/bin/python /home/andrew/pgapi/mqtt_subscriber.py
+ExecStart=/bin/bash /home/andrew/pgapi/start_mqtt_subscriber.sh
 Restart=always
 RestartSec=10
 StandardOutput=journal

@@ -247,6 +247,9 @@ async def get_data_history(
         return HistoryResponse(data=telemetry_data, total_records=total_count)
 
 
+# Note: This function is deprecated - use MQTT subscriber for data ingestion
+
+
 @router.get("/devices", response_model=List[DeviceInfo])
 async def get_devices():
     """Get list of all registered devices"""
@@ -282,12 +285,12 @@ async def store_sensor_data(data: Dict[str, Any]) -> None:
     async with db_pool.acquire() as conn:
         # Upsert device info
         await conn.execute("""
-            INSERT INTO "Devices" (device_id, last_seen)
-            VALUES ($1, to_timestamp($2))
+            INSERT INTO "Devices" (device_id, last_seen, "createdAt", "updatedAt")
+            VALUES ($1, to_timestamp($2), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (device_id)
             DO UPDATE SET
                 last_seen = EXCLUDED.last_seen,
-                updated_at = CURRENT_TIMESTAMP
+                "updatedAt" = CURRENT_TIMESTAMP
         """,
             data.get("device_id"),
             data.get("timestamp")
@@ -298,9 +301,10 @@ async def store_sensor_data(data: Dict[str, Any]) -> None:
             INSERT INTO "TelemetryData" (
                 device_id, timestamp, fw_version, wifi_ssid, wifi_rssi,
                 uptime_ms, free_heap, battery_voltage,
-                led_power, led_water, led_pads
+                led_power, led_water, led_pads,
+                "createdAt", "updatedAt"
             )
-            VALUES ($1, to_timestamp($2), $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            VALUES ($1, to_timestamp($2), $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
             data.get("device_id"),
             data.get("timestamp"),
