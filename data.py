@@ -139,7 +139,9 @@ async def get_latest_data(device_id: Optional[str] = Query(None, description="Fi
     async with db_pool.acquire() as conn:
         if device_id:
             row = await conn.fetchrow("""
-                SELECT device_id, timestamp, fw_version, wifi_ssid, wifi_rssi,
+                SELECT device_id,
+                       CAST(EXTRACT(EPOCH FROM timestamp) AS BIGINT) as timestamp,
+                       fw_version, wifi_ssid, wifi_rssi,
                        uptime_ms, free_heap, battery_voltage,
                        led_power, led_water, led_pads
                 FROM "TelemetryData"
@@ -149,7 +151,9 @@ async def get_latest_data(device_id: Optional[str] = Query(None, description="Fi
             """, device_id)
         else:
             row = await conn.fetchrow("""
-                SELECT device_id, timestamp, fw_version, wifi_ssid, wifi_rssi,
+                SELECT device_id,
+                       CAST(EXTRACT(EPOCH FROM timestamp) AS BIGINT) as timestamp,
+                       fw_version, wifi_ssid, wifi_rssi,
                        uptime_ms, free_heap, battery_voltage,
                        led_power, led_water, led_pads
                 FROM "TelemetryData"
@@ -199,7 +203,9 @@ async def get_data_history(
         # Get limited historical data ordered by timestamp descending
         if device_id:
             rows = await conn.fetch("""
-                SELECT device_id, timestamp, fw_version, wifi_ssid, wifi_rssi,
+                SELECT device_id,
+                       CAST(EXTRACT(EPOCH FROM timestamp) AS BIGINT) as timestamp,
+                       fw_version, wifi_ssid, wifi_rssi,
                        uptime_ms, free_heap, battery_voltage,
                        led_power, led_water, led_pads
                 FROM "TelemetryData"
@@ -209,7 +215,9 @@ async def get_data_history(
             """, device_id, limit)
         else:
             rows = await conn.fetch("""
-                SELECT device_id, timestamp, fw_version, wifi_ssid, wifi_rssi,
+                SELECT device_id,
+                       CAST(EXTRACT(EPOCH FROM timestamp) AS BIGINT) as timestamp,
+                       fw_version, wifi_ssid, wifi_rssi,
                        uptime_ms, free_heap, battery_voltage,
                        led_power, led_water, led_pads
                 FROM "TelemetryData"
@@ -247,7 +255,11 @@ async def get_devices():
 
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT device_id, last_seen
+            SELECT device_id,
+                   CASE
+                       WHEN last_seen IS NULL THEN NULL
+                       ELSE CAST(EXTRACT(EPOCH FROM last_seen) AS BIGINT)
+                   END as last_seen
             FROM "Devices"
             ORDER BY last_seen DESC NULLS LAST
         """)
@@ -271,7 +283,7 @@ async def store_sensor_data(data: Dict[str, Any]) -> None:
         # Upsert device info
         await conn.execute("""
             INSERT INTO "Devices" (device_id, last_seen)
-            VALUES ($1, $2)
+            VALUES ($1, to_timestamp($2))
             ON CONFLICT (device_id)
             DO UPDATE SET
                 last_seen = EXCLUDED.last_seen,
@@ -288,7 +300,7 @@ async def store_sensor_data(data: Dict[str, Any]) -> None:
                 uptime_ms, free_heap, battery_voltage,
                 led_power, led_water, led_pads
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            VALUES ($1, to_timestamp($2), $3, $4, $5, $6, $7, $8, $9, $10, $11)
         """,
             data.get("device_id"),
             data.get("timestamp"),
