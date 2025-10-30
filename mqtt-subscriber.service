@@ -1,0 +1,24 @@
+[Unit]
+Description=PianoGuard MQTT Subscriber Service
+After=network.target mosquitto.service postgresql-13.service
+Requires=network.target
+
+[Service]
+Type=simple
+User=andrew
+Group=andrew
+WorkingDirectory=/home/andrew/pgapi
+Environment="PATH=/home/andrew/pgapi/venv/bin"
+ExecStart=/home/andrew/pgapi/venv/bin/python /home/andrew/pgapi/mqtt_subscriber.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mqtt-subscriber
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
